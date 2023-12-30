@@ -22,7 +22,6 @@ class WatchDog {
   private waitingPromiseResolve?: () => void;
 
   private child?: ChildProcess;
-  private childExiting = false;
   private childExitPromiseResolv?: () => void;
 
   private exit = false;
@@ -72,6 +71,12 @@ class WatchDog {
     return child;
   }
 
+  private waitChildProcess() {
+    return new Promise<void>((resolve) => {
+      this.childExitPromiseResolv = resolve;
+    });
+  }
+
   private async killChild() {
     return new Promise<void>((resolve, reject) => {
       if (!this.child || this.child.killed) {
@@ -79,7 +84,6 @@ class WatchDog {
       }
 
       console.log(`[ChildProcess][${this.child.pid}][SYS]: child process will exit`);
-      this.childExiting = true;
       this.child.kill('SIGTERM');
       this.childExitPromiseResolv = resolve;
     });
@@ -99,11 +103,6 @@ class WatchDog {
   }
 
   private onChildStopped() {
-    if (!this.childExiting) {
-      console.log(`[ChildProcess][${this.child?.pid}][SYS]: child process exit abnormally`);
-      this.onParentStop('SIGTERM');
-    }
-
     this.childExitPromiseResolv && this.childExitPromiseResolv();
     this.child = undefined;
 
@@ -117,10 +116,15 @@ class WatchDog {
       const child = this.startProcess();
       this.child = child;
       console.log(`[ParentProcess][${process.pid}][SYS]: started a new child process pid(${child.pid})`);
-      
+
+      await this.waitChildProcess();
+
+      console.log(`[ParentProcess][${process.pid}][SYS]: child process pid(${child.pid}) exit`);
+
       await this.wait(this.waitTime * 1000);
-      console.log(`[ParentProcess][${process.pid}][SYS]: wait for ${this.waitTime}s restart child process`);
-      await this.killChild();
+
+      // console.log(`[ParentProcess][${process.pid}][SYS]: wait for ${this.waitTime}s restart child process`);
+      // await this.killChild();
     } while (!this.exit);
   }
 }
